@@ -1,23 +1,29 @@
-use std::path::PathBuf;
-
+use serde::Deserialize;
+use std::{collections::HashMap, io::Write, path::PathBuf};
 use tokio_serial::SerialPortBuilderExt;
-use tracing::{info, warn};
+use tracing::{debug, info, warn};
 
-use crate::{registry, serial::SerialProvider, udev::Device};
+use crate::{
+    registry::{self, Properties},
+    serial::SerialProvider,
+    udev::Device,
+    Server,
+};
 
 pub const PROVIDER: &str = "hifive-p550-mcu";
 
-pub struct HifiveP550MCUProvider {
+pub struct SerialCommandProvider {
     name: String,
+    server: Server,
 }
 
-impl HifiveP550MCUProvider {
-    pub fn new(name: String) -> Self {
-        Self { name }
+impl SerialCommandProvider {
+    pub fn new(name: String, parameters: serde_yaml::Value, server: Server) -> Self {
+        Self { name, server }
     }
 }
 
-impl SerialProvider for HifiveP550MCUProvider {
+impl SerialProvider for SerialCommandProvider {
     fn handle(&mut self, device: &crate::udev::Device, _seqnum: u64) -> bool {
         let provider_properties = &[
             (registry::PROVIDER_NAME, self.name.as_str()),
@@ -29,31 +35,33 @@ impl SerialProvider for HifiveP550MCUProvider {
         if device.property_u64("ID_MODEL_ID", 16) != Some(0x6001) {
             return false;
         };
-
         if let Some(node) = device.devnode() {
             if let Some(name) = node.file_name() {
                 let mut properties = device.properties(name.to_string_lossy());
                 properties.extend(provider_properties);
-                tokio::spawn(setup_volume(node.to_path_buf()));
-
+                tokio::spawn(setup_serial_command(
+                    node.to_path_buf(),
+                    properties,
+                    self.server.clone(),
+                ));
                 return true;
             }
         }
         false
     }
 
-    fn remove(&mut self, _device: &Device) {}
+    fn remove(&mut self, device: &Device) {
+        // TODO: implement this!
+        warn!(
+            "Remove not implemented, ignoring device {}",
+            device.syspath().display()
+        );
+    }
 }
 
-async fn setup_serial_command(
-    node: PathBuf,
-    properties: Properties,
-    parameters: SerialCommandParameters,
-    server: Server,
-) {
+async fn setup_serial_command(node: PathBuf, properties: Properties, server: Server) {
     info!("Setting up serial cmd for {}", node.display());
-    let port = match tokio_serial::new(node.to_string_lossy(), parameters.rate).open_native_async()
-    {
+    let port = match tokio_serial::new(node.to_string_lossy(), 115200).open_native_async() {
         Ok(port) => port,
         Err(e) => {
             warn!("Failed to open serial port: {e}");
