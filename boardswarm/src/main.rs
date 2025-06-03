@@ -1097,7 +1097,7 @@ async fn main() -> anyhow::Result<()> {
                 local.spawn_local(dfu::start_provider(p.name, server.clone()));
             }
             hifive_p550_mcu::PROVIDER => match serial {
-                Some(ref s) => s.add_provider(HifiveP550MCUProvider::new(p.name)),
+                Some(ref s) => s.add_provider(HifiveP550MCUProvider::new(p.name, server.clone())),
                 None => {
                     bail!("Hifive P550 MCU provider requires the serial provider to be enabled")
                 }
