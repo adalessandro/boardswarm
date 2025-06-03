@@ -96,26 +96,21 @@ struct HifiveP550MCUCommand {
     tx: tokio::sync::mpsc::Sender<String>,
 }
 
-impl std::fmt::Debug for HifiveP550MCUCommand {
+impl std::fmt::Debug for HifiveP550MCUActuator {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         // TODO make more meaningful
-        f.debug_struct("HifiveP550MCUCommand")
+        f.debug_struct("HifiveP550MCUActuator")
             .finish_non_exhaustive()
     }
 }
 
 #[async_trait::async_trait]
-impl crate::Actuator for HifiveP550MCUCommand {
+impl crate::Actuator for HifiveP550MCUActuator {
     async fn set_mode(
         &self,
         parameters: Box<dyn erased_serde::Deserializer<'static> + Send>,
     ) -> Result<(), crate::ActuatorError> {
-        #[derive(Deserialize, Debug)]
-        struct ModeParameters {
-            value: bool,
-        }
-        let parameters = ModeParameters::deserialize(parameters).unwrap();
-        dbg!(parameters);
+        self.tx.send(self.name, parameters).await.unwrap();
         Ok(())
     }
 }
