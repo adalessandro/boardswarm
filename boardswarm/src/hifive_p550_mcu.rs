@@ -1,5 +1,5 @@
 use serde::Deserialize;
-use std::path::PathBuf;
+use std::{collections::HashMap, path::PathBuf};
 use tokio_serial::SerialPortBuilderExt;
 use tracing::{info, warn};
 
@@ -12,14 +12,26 @@ use crate::{
 
 pub const PROVIDER: &str = "hifive-p550-mcu";
 
+#[derive(Deserialize, Clone, Debug, Default)]
+struct HifiveP550MCUParameters {
+    #[serde(rename = "match")]
+    match_: HashMap<String, String>,
+}
+
 pub struct HifiveP550MCUProvider {
     name: String,
+    parameters: HifiveP550MCUParameters,
     server: Server,
 }
 
 impl HifiveP550MCUProvider {
-    pub fn new(name: String, server: Server) -> Self {
-        Self { name, server }
+    pub fn new(name: String, parameters: serde_yaml::Value, server: Server) -> Self {
+        let parameters: HifiveP550MCUParameters = serde_yaml::from_value(parameters).unwrap();
+        Self {
+            name,
+            parameters,
+            server,
+        }
     }
 }
 
@@ -72,12 +84,12 @@ async fn setup_hifive_p550_mcu(node: PathBuf, properties: Properties, server: Se
     tokio::spawn(process(port, rx));
 
     let mut properties = properties.clone();
-    let command = "hifive-p550-mcu-sompower";
-    properties.insert(registry::NAME, command);
+    let name = "hifive-p550-mcu-sompower";
+    properties.insert(registry::NAME, name);
     server.register_actuator(
         properties,
-        HifiveP550MCUCommand {
-            command: command.into(),
+        HifiveP550MCUActuator {
+            name: name.into(),
             tx: tx.clone(),
         },
     );
@@ -85,15 +97,21 @@ async fn setup_hifive_p550_mcu(node: PathBuf, properties: Properties, server: Se
 
 async fn process(
     mut _port: tokio_serial::SerialStream,
-    mut rx: tokio::sync::mpsc::Receiver<String>,
+    mut rx: tokio::sync::mpsc::Receiver<HifiveP550MCUCommand>,
 ) {
     while let Some(command) = rx.recv().await {
         dbg!(&command);
     }
 }
-struct HifiveP550MCUCommand {
-    command: String,
-    tx: tokio::sync::mpsc::Sender<String>,
+
+#[derive(Debug)]
+enum HifiveP550MCUCommand {
+    SomPower(),
+}
+
+struct HifiveP550MCUActuator {
+    name: String,
+    tx: tokio::sync::mpsc::Sender<HifiveP550MCUCommand>,
 }
 
 impl std::fmt::Debug for HifiveP550MCUActuator {
@@ -108,9 +126,13 @@ impl std::fmt::Debug for HifiveP550MCUActuator {
 impl crate::Actuator for HifiveP550MCUActuator {
     async fn set_mode(
         &self,
-        parameters: Box<dyn erased_serde::Deserializer<'static> + Send>,
+        _parameters: Box<dyn erased_serde::Deserializer<'static> + Send>,
     ) -> Result<(), crate::ActuatorError> {
-        self.tx.send(self.name, parameters).await.unwrap();
+        let command = match self.name.as_str() {
+            "hifive-p550-mcu-sompower" => HifiveP550MCUCommand::SomPower(),
+            _ => return Err(crate::ActuatorError {}),
+        };
+        self.tx.send(command).await.unwrap();
         Ok(())
     }
 }
