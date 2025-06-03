@@ -1,5 +1,7 @@
+use bytes::BytesMut;
 use serde::Deserialize;
 use std::{collections::HashMap, path::PathBuf};
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio_serial::SerialPortBuilderExt;
 use tracing::{debug, info, warn};
 
@@ -104,13 +106,19 @@ async fn setup_hifive_p550_mcu(node: PathBuf, properties: Properties, server: Se
 }
 
 async fn process(
-    mut _port: tokio_serial::SerialStream,
+    mut port: tokio_serial::SerialStream,
     mut rx: tokio::sync::mpsc::Receiver<HifiveP550MCUCommand>,
 ) {
     while let Some(command) = rx.recv().await {
         match command {
             HifiveP550MCUCommand::SomPower(parameters) => {
-                dbg!("SomPower", parameters.value);
+                let buf = format!("sompower-s {}\n", parameters.value as usize);
+                debug!("Writing serial command: {}", &buf);
+                port.write_all(buf.as_bytes()).await.unwrap();
+                let mut data = BytesMut::zeroed(1024);
+                let r = port.read(&mut data).await.unwrap();
+                data.truncate(r);
+                dbg!(data);
             }
         }
     }
