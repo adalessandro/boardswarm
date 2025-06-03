@@ -1,7 +1,7 @@
 use serde::Deserialize;
 use std::{collections::HashMap, path::PathBuf};
 use tokio_serial::SerialPortBuilderExt;
-use tracing::{info, warn};
+use tracing::{debug, info, warn};
 
 use crate::{
     registry::{self, Properties},
@@ -50,6 +50,14 @@ impl SerialProvider for HifiveP550MCUProvider {
         if let Some(node) = device.devnode() {
             if let Some(name) = node.file_name() {
                 let mut properties = device.properties(name.to_string_lossy());
+                if !properties.matches(&self.parameters.match_) {
+                    debug!(
+                        "Ignoring device {} - {:?}",
+                        device.syspath().display(),
+                        properties,
+                    );
+                    return false;
+                }
                 properties.extend(provider_properties);
                 tokio::spawn(setup_hifive_p550_mcu(
                     node.to_path_buf(),
