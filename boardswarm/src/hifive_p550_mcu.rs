@@ -72,7 +72,7 @@ async fn setup_hifive_p550_mcu(node: PathBuf, properties: Properties, server: Se
     tokio::spawn(process(port, rx));
 
     let mut properties = properties.clone();
-    let command = "foo-test-command";
+    let command = "hifive-p550-mcu-sompower";
     properties.insert(registry::NAME, command);
     server.register_actuator(
         properties,
