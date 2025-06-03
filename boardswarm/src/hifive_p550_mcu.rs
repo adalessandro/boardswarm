@@ -26,7 +26,7 @@ impl SerialProvider for HifiveP550MCUProvider {
         if device.property_u64("ID_VENDOR_ID", 16) != Some(0x0403) {
             return false;
         };
-        if device.property_u64("ID_MODEL_ID", 16) != Some(0x6011) {
+        if device.property_u64("ID_MODEL_ID", 16) != Some(0x6001) {
             return false;
         };
 
