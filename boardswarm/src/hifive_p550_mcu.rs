@@ -45,16 +45,58 @@ impl SerialProvider for HifiveP550MCUProvider {
     fn remove(&mut self, _device: &Device) {}
 }
 
-async fn setup_volume(node: PathBuf) {
-    info!("Setting up brom volume for {}", node.display());
-    let port = match tokio_serial::new(node.to_string_lossy(), 115200).open_native_async() {
+async fn setup_serial_command(
+    node: PathBuf,
+    properties: Properties,
+    parameters: SerialCommandParameters,
+    server: Server,
+) {
+    info!("Setting up serial cmd for {}", node.display());
+    let port = match tokio_serial::new(node.to_string_lossy(), parameters.rate).open_native_async()
+    {
         Ok(port) => port,
         Err(e) => {
             warn!("Failed to open serial port: {e}");
             return;
         }
     };
-    dbg!(port);
+
+    let (tx, rx) = tokio::sync::mpsc::channel(16);
+    tokio::spawn(process(port, rx));
+
+    for command in parameters.commands {
+        let mut properties = properties.clone();
+        properties.insert(registry::NAME, command.name.clone());
+        server.register_actuator(
+            properties,
+            SerialCommand {
+                command,
+                tx: tx.clone(),
+            },
+        );
+    }
+}
+
+async fn process(
+    mut port: tokio_serial::SerialStream,
+    mut rx: tokio::sync::mpsc::Receiver<Command>,
+) {
+    while let Some(command) = rx.recv().await {
+        let buf = format!("{}\n", command.message);
+        debug!("Writing serial command: {}", &buf);
+        let _ = port.write_all(buf.as_bytes());
+    }
+}
+struct SerialCommand {
+    command: Command,
+    tx: tokio::sync::mpsc::Sender<Command>,
+}
+
+impl std::fmt::Debug for SerialCommand {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // TODO make more meaningful
+        f.debug_struct("SerialCommand").finish_non_exhaustive()
+    }
 }
 
 #[async_trait::async_trait]
