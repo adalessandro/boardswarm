@@ -56,3 +56,14 @@ async fn setup_volume(node: PathBuf) {
     };
     dbg!(port);
 }
+
+#[async_trait::async_trait]
+impl crate::Actuator for SerialCommand {
+    async fn set_mode(
+        &self,
+        _parameters: Box<dyn erased_serde::Deserializer<'static> + Send>,
+    ) -> Result<(), crate::ActuatorError> {
+        self.tx.send(self.command.clone()).await.unwrap();
+        Ok(())
+    }
+}
