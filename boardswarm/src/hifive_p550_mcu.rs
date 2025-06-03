@@ -108,13 +108,20 @@ async fn process(
     mut rx: tokio::sync::mpsc::Receiver<HifiveP550MCUCommand>,
 ) {
     while let Some(command) = rx.recv().await {
-        dbg!(&command);
+        match command {
+            HifiveP550MCUCommand::SomPower(parameters) => {
+                dbg!("SomPower", parameters.value);
+            }
+        }
     }
 }
 
-#[derive(Debug)]
+#[derive(Deserialize)]
+struct CommandSomPowerParameters {
+    value: bool,
+}
 enum HifiveP550MCUCommand {
-    SomPower(),
+    SomPower(CommandSomPowerParameters),
 }
 
 struct HifiveP550MCUActuator {
@@ -134,10 +141,13 @@ impl std::fmt::Debug for HifiveP550MCUActuator {
 impl crate::Actuator for HifiveP550MCUActuator {
     async fn set_mode(
         &self,
-        _parameters: Box<dyn erased_serde::Deserializer<'static> + Send>,
+        parameters: Box<dyn erased_serde::Deserializer<'static> + Send>,
     ) -> Result<(), crate::ActuatorError> {
         let command = match self.name.as_str() {
-            "hifive-p550-mcu-sompower" => HifiveP550MCUCommand::SomPower(),
+            "hifive-p550-mcu-sompower" => {
+                let parameters = CommandSomPowerParameters::deserialize(parameters).unwrap();
+                HifiveP550MCUCommand::SomPower(parameters)
+            }
             _ => return Err(crate::ActuatorError {}),
         };
         self.tx.send(command).await.unwrap();
