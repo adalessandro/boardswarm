@@ -116,7 +116,7 @@ async fn process(
                 debug!("Writing serial command: {}", &buf);
                 port.write_all(buf.as_bytes()).await.unwrap();
                 let mut data = BytesMut::zeroed(1024);
-                let r = port.read(&mut data).await.unwrap();
+                let r = port.read_exact(&mut data).await.unwrap();
                 data.truncate(r);
                 dbg!(data);
             }
