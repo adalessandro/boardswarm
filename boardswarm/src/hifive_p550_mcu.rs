@@ -1,3 +1,4 @@
+use bytes::BytesMut;
 use serde::Deserialize;
 use std::{collections::HashMap, path::PathBuf, sync::Arc};
 use tokio::{
@@ -133,12 +134,12 @@ impl crate::Actuator for HifiveP550MCUActuator {
                 let parameters = ParametersSomPower::deserialize(parameters).unwrap();
                 let buf = format!("sompower-s {}\n", parameters.value as usize);
                 let mut port = self.port.lock().await;
-                debug!("Writing serial command: {}", &buf);
+                debug!("Writing buffer: {:?}", &buf);
                 port.write_all(buf.as_bytes()).await.unwrap();
-                let mut data = String::new();
-                let r = port.read_to_string(&mut data).await.unwrap();
+                let mut data = BytesMut::zeroed(1024);
+                let r = port.read(&mut data).await.unwrap();
                 data.truncate(r);
-                dbg!(data);
+                debug!("Read buffer: {:?}", &data);
             }
             _ => return Err(crate::ActuatorError {}),
         };
