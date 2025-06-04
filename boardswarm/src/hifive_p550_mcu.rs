@@ -1,4 +1,3 @@
-use bytes::BytesMut;
 use serde::Deserialize;
 use std::{collections::HashMap, path::PathBuf, sync::Arc};
 use tokio::{
@@ -136,8 +135,8 @@ impl crate::Actuator for HifiveP550MCUActuator {
                 let mut port = self.port.lock().await;
                 debug!("Writing serial command: {}", &buf);
                 port.write_all(buf.as_bytes()).await.unwrap();
-                let mut data = BytesMut::zeroed(1024);
-                let r = port.read_exact(&mut data).await.unwrap();
+                let mut data = String::new();
+                let r = port.read_to_string(&mut data).await.unwrap();
                 data.truncate(r);
                 dbg!(data);
             }
