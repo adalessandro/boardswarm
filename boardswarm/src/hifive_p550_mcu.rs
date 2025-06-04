@@ -1,8 +1,11 @@
 use bytes::BytesMut;
 use serde::Deserialize;
-use std::{collections::HashMap, path::PathBuf};
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio_serial::SerialPortBuilderExt;
+use std::{collections::HashMap, path::PathBuf, sync::Arc};
+use tokio::{
+    io::{AsyncReadExt, AsyncWriteExt},
+    sync::Mutex as AsyncMutex,
+};
+use tokio_serial::{SerialPortBuilderExt, SerialStream};
 use tracing::{debug, info, warn};
 
 use crate::{
@@ -90,9 +93,6 @@ async fn setup_hifive_p550_mcu(node: PathBuf, properties: Properties, server: Se
         }
     };
 
-    let (tx, rx) = tokio::sync::mpsc::channel(16);
-    tokio::spawn(process(port, rx));
-
     let mut properties = properties.clone();
     let name = "hifive-p550-mcu-sompower";
     properties.insert(registry::NAME, name);
@@ -100,41 +100,19 @@ async fn setup_hifive_p550_mcu(node: PathBuf, properties: Properties, server: Se
         properties,
         HifiveP550MCUActuator {
             name: name.into(),
-            tx: tx.clone(),
+            port: Arc::new(AsyncMutex::new(port)),
         },
     );
 }
 
-async fn process(
-    mut port: tokio_serial::SerialStream,
-    mut rx: tokio::sync::mpsc::Receiver<HifiveP550MCUCommand>,
-) {
-    while let Some(command) = rx.recv().await {
-        match command {
-            HifiveP550MCUCommand::SomPower(parameters) => {
-                let buf = format!("sompower-s {}\n", parameters.value as usize);
-                debug!("Writing serial command: {}", &buf);
-                port.write_all(buf.as_bytes()).await.unwrap();
-                let mut data = BytesMut::zeroed(1024);
-                let r = port.read_exact(&mut data).await.unwrap();
-                data.truncate(r);
-                dbg!(data);
-            }
-        }
-    }
-}
-
 #[derive(Deserialize)]
-struct CommandSomPowerParameters {
+struct ParametersSomPower {
     value: bool,
-}
-enum HifiveP550MCUCommand {
-    SomPower(CommandSomPowerParameters),
 }
 
 struct HifiveP550MCUActuator {
     name: String,
-    tx: tokio::sync::mpsc::Sender<HifiveP550MCUCommand>,
+    port: Arc<AsyncMutex<SerialStream>>,
 }
 
 impl std::fmt::Debug for HifiveP550MCUActuator {
@@ -151,14 +129,20 @@ impl crate::Actuator for HifiveP550MCUActuator {
         &self,
         parameters: Box<dyn erased_serde::Deserializer<'static> + Send>,
     ) -> Result<(), crate::ActuatorError> {
-        let command = match self.name.as_str() {
+        match self.name.as_str() {
             "hifive-p550-mcu-sompower" => {
-                let parameters = CommandSomPowerParameters::deserialize(parameters).unwrap();
-                HifiveP550MCUCommand::SomPower(parameters)
+                let parameters = ParametersSomPower::deserialize(parameters).unwrap();
+                let buf = format!("sompower-s {}\n", parameters.value as usize);
+                let mut port = self.port.lock().await;
+                debug!("Writing serial command: {}", &buf);
+                port.write_all(buf.as_bytes()).await.unwrap();
+                let mut data = BytesMut::zeroed(1024);
+                let r = port.read_exact(&mut data).await.unwrap();
+                data.truncate(r);
+                dbg!(data);
             }
             _ => return Err(crate::ActuatorError {}),
         };
-        self.tx.send(command).await.unwrap();
         Ok(())
     }
 }
